@@ -1,0 +1,587 @@
+<!DOCTYPE ahtml>
+<html>
+<head>
+  <!-- Tailwind CSS CDN 로드 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      overflow: hidden; /* 전체 페이지 스크롤 방지 */
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-color: #e0f2fe; /* 하늘색 배경 */
+    }
+    
+    /* 게임 컨테이너 */
+    #game-container {
+      position: relative;
+      width: 100%;
+      max-width: 350px; /* 화면 너비 살짝 증가 */
+      margin: 0 auto;
+    }
+
+    /* 그리드 (카메라 뷰포트) */
+    #game-grid-container {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      border: 4px solid #1e3a8a;
+      border-radius: 8px;
+      background-color: #bae6fd; /* 하늘색 (채굴된 공간) */
+      touch-action: none;
+      overflow: hidden;
+    }
+    #game-grid {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr); 
+      grid-template-rows: repeat(10, 1fr);
+      height: 100%;
+    }
+    
+    .block {
+      cursor: pointer; 
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+      user-select: none;
+      font-size: 1.2rem;
+      position: relative;
+      /* 블록이 채굴되거나 재생성될 때 깜빡이는 효과 방지 */
+      transition: background-color 0.1s;
+    }
+
+    /* 플레이어 */
+    #player {
+      position: absolute;
+      width: 10%;
+      height: 10%;
+      background-color: #f59e0b; 
+      border: 2px solid #fff;
+      border-radius: 50%;
+      z-index: 20;
+      /* 부드러운 이동 및 낙하 애니메이션 */
+      transition: top 0.2s ease-in, left 0.1s linear; 
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 1.2rem;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+
+    /* === 블록 스타일 === */
+    .grass { background-color: #65a30d; border-top: 4px solid #4d7c0f; } 
+    .dirt { background-color: #78350f; }  
+    .stone { background-color: #4b5563; } 
+    
+    /* 나무 (Tree) */
+    .tree-log { background-color: #8b5c3b; }
+
+    /* 석탄 (Coal) */
+    .coal-ore { 
+      background-color: #333;
+      background-image: radial-gradient(#1f2937 25%, transparent 26%), radial-gradient(#1f2937 25%, transparent 26%);
+      background-size: 12px 12px;
+      background-position: 0 0, 6px 6px;
+    }
+    
+    /* 구리 (Copper) - 흔함 */
+    .copper-ore { 
+        background-color: #5b211a; /* 어두운 구리 색 */
+        background-image: radial-gradient(#b91c1c 20%, transparent 21%), radial-gradient(#ef4444 20%, transparent 21%);
+        background-size: 14px 14px;
+        background-position: 0 0, 7px 7px;
+    }
+
+    /* 철 (Iron) - 보통 */
+    .iron-ore { 
+        background-color: #4b5563; /* 돌 기반 */
+        background-image: radial-gradient(#d1d5db 18%, transparent 19%), radial-gradient(#9ca3af 18%, transparent 19%);
+        background-size: 10px 10px;
+        background-position: 0 0, 5px 5px;
+    }
+
+    /* 금 (Gold) - 희귀 */
+    .gold-ore { 
+        background-color: #4b5563; 
+        background-image: radial-gradient(#fbbf24 18%, transparent 19%), radial-gradient(#f97316 18%, transparent 19%);
+        background-size: 10px 10px;
+        background-position: 0 0, 5px 5px;
+        border: 2px solid #eab308;
+    }
+
+    /* 에메랄드 (Emerald) - 매우 희귀 */
+    .emerald-ore { 
+        background-color: #1f2937; 
+        background-image: radial-gradient(#10b981 12%, transparent 13%), radial-gradient(#059669 12%, transparent 13%);
+        background-size: 10px 10px;
+        background-position: 0 0, 5px 5px;
+        border: 2px solid #047857;
+    }
+
+    /* 다이아몬드 (Diamond) - 목표 */
+    .diamond-ore { 
+      background-color: #1f2937; 
+      background-image: radial-gradient(#60a5fa 15%, transparent 16%), radial-gradient(#3b82f6 15%, transparent 16%);
+      background-size: 10px 10px;
+      background-position: 0 0, 5px 5px;
+      border: 2px solid #2563eb;
+    }
+
+    /* 채굴된 상태 (투명/배경색) */
+    .mined {
+      background-color: transparent !important;
+      background-image: none !important;
+      border: none !important;
+    }
+    .mined:hover {
+      background-color: rgba(255, 255, 255, 0.2) !important;
+    }
+
+    /* 오버레이 (승리/패배 메시지) */
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      text-align: center;
+    }
+    .hidden { display: none !important; }
+    
+    .key-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      background-color: #e2e8f0;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: bold;
+      color: #334155;
+    }
+  </style>
+</head>
+<body class="p-4" tabindex="0">
+
+  <h1 class="text-xl font-bold mb-2 text-center text-blue-900">🌍 2D 오픈월드 생존 게임 (무한 에너지)</h1>
+  
+  <div id="game-container">
+    
+    <!-- 게임 화면 -->
+    <div id="game-grid-container" class="shadow-xl">
+      <!-- 게임 오버/승리 오버레이 -->
+      <div id="overlay" class="hidden">
+        <h2 id="overlay-title" class="text-3xl font-bold mb-2">게임 오버</h2>
+        <p id="overlay-desc" class="mb-6 text-gray-300">다이아몬드를 찾지 못하고 탐험을 마쳤습니다.</p>
+        <button onclick="restartGame()" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-full font-bold transition text-white">
+          다시 도전하기
+        </button>
+      </div>
+
+      <!-- 플레이어 -->
+      <div id="player">👷</div>
+      <!-- 그리드 -->
+      <div id="game-grid"></div>
+    </div>
+    
+    <!-- 안내 메시지 -->
+    <div class="text-xs text-center text-gray-600 mt-3 space-y-1">
+      <p>
+        <span class="key-badge">W</span> 점프 | 
+        <span class="key-badge">A</span><span class="key-badge">D</span> 이동 |
+        클릭해서 채굴
+      </p>
+      <p class="text-blue-700 font-semibold">
+        💡 팁: 나무를 채굴하고, 금, 철, 구리, 에메랄드 광물을 찾아 깊이 파고드세요!
+      </p>
+    </div>
+    
+    <p id="focus-message" class="text-xs text-center text-red-500 mt-2 font-semibold animate-pulse">
+      ⚠️ 조작이 안되면 화면을 클릭하세요!
+    </p>
+  </div>
+
+  <script>
+    // Firebase 및 기타 외부 API는 사용하지 않으므로 관련 전역 변수 초기화 코드는 생략합니다.
+    
+    const GRID_SIZE = 10;
+    const VIEWPORT_CENTER = Math.floor(GRID_SIZE / 2); // 5
+    const gameGrid = document.getElementById('game-grid');
+    const playerElement = document.getElementById('player');
+    const overlay = document.getElementById('overlay');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayDesc = document.getElementById('overlay-desc');
+    const focusMessage = document.getElementById('focus-message');
+    
+    // 게임 설정 (에너지 시스템 제거 상태 유지)
+    const COST_MOVE = 0; 
+    const COST_JUMP = 0; 
+    const COST_MINE = 0; 
+    const HEAL_APPLE = 0; 
+    const GRAVITY_SPEED = 1000; // 중력 체크 속도 (ms)
+    
+    // 게임 상태 (글로벌 좌표 사용)
+    let playerGlobalX = 0; 
+    let playerGlobalY = 0;
+    let isGameOver = false;
+    let gravityInterval;
+    
+    // 월드 데이터 저장소 (Key: "x,y", Value: blockType)
+    let minedBlocks = new Map();
+    // NEW: 생성된 블록의 타입을 영구적으로 저장하는 캐시 (광물 및 돌 고정용)
+    let blockCache = new Map();
+    // 다이아몬드 위치 저장
+    let diamondPosition = { x: 0, y: 0 };
+    let isDiamondFound = false;
+
+    // 블록 타입 (추가된 광물 및 나무)
+    const BLOCK_TYPES = {
+      1: { name: '잔디', cssClass: 'grass', loot: 'grass', canDropApple: true },
+      2: { name: '흙', cssClass: 'dirt', loot: 'dirt', canDropApple: false },
+      3: { name: '돌', cssClass: 'stone', loot: 'stone', canDropApple: false },
+      4: { name: '다이아몬드', cssClass: 'diamond-ore', loot: 'diamond', isGoal: true },
+      5: { name: '석탄', cssClass: 'coal-ore', loot: 'coal', isCommonOre: true },
+      6: { name: '금', cssClass: 'gold-ore', loot: 'gold', isRareOre: true },
+      7: { name: '철', cssClass: 'iron-ore', loot: 'iron', isMediumOre: true },
+      8: { name: '구리', cssClass: 'copper-ore', loot: 'copper', isCommonOre: true },
+      9: { name: '에메랄드', cssClass: 'emerald-ore', loot: 'emerald', isVeryRareOre: true },
+      10: { name: '나무', cssClass: 'tree-log', loot: 'wood', isSurface: true },
+    };
+
+    /**
+     * 특정 글로벌 좌표에 있는 블록의 타입을 결정합니다.
+     * (무한 월드 생성 로직 - 순수 계산. Math.random()을 사용하여 블록을 처음 생성할 때만 호출됨)
+     * @param {number} gx 글로벌 X 좌표
+     * @param {number} gy 글로벌 Y 좌표 (깊이)
+     * @returns {number} 블록 타입 인덱스 (0: 공기, 1: 잔디, 2: 흙, 3: 돌, 5~10: 광물/나무)
+     */
+    function generateBlockType(gx, gy) {
+      if (gy < 0) return 0; // 하늘 (블록 없음)
+
+      // X 좌표에 따른 지형 높이 변동 (지표면 계산)
+      const surfaceOffset = Math.sin(gx / 5) * 2; // -2 to +2
+      const baseSurfaceY = 5; // 기본 지표면 깊이
+      const surfaceY = Math.round(baseSurfaceY + surfaceOffset); 
+
+      // === 지상/공기 로직 ===
+      if (gy < surfaceY - 1) {
+          // 지표면 바로 위 (gy = surfaceY - 2)에 5% 확률로 나무 생성
+          if (gy === surfaceY - 2 && Math.random() < 0.05) {
+              return 10; // 나무 (Tree Log)
+          }
+          return 0; // 나머지 공간은 하늘 (공기)
+      } else if (gy === surfaceY - 1) {
+        return 1; // 지표면 (잔디)
+      } else if (gy < surfaceY + 4) {
+        return 2; // 흙
+      } else {
+        // === 지하 (돌 및 광물) 로직 (gy >= 6) ===
+        // 이 로직은 블록이 처음 생성될 때만 실행되며, 결과는 blockCache에 저장되어 고정됩니다.
+        const rand = Math.random();
+        
+        // 광물 생성 확률 (낮은 확률부터 체크하여 중복 방지)
+        
+        // 1. 에메랄드 (Type 9) - 매우 희귀, 깊은 곳 (gy >= 25)
+        if (gy >= 25 && rand < 0.005) return 9; // 0.5%
+        
+        // 2. 금 (Type 6) - 희귀 (gy >= 15)
+        if (gy >= 15 && rand < 0.02) return 6; // 2%
+        
+        // 3. 철 (Type 7) - 보통 (gy >= 10)
+        if (gy >= 10 && rand < 0.05) return 7; // 5%
+
+        // 4. 구리 (Type 8) - 흔함 (gy >= 6)
+        if (rand < 0.08) return 8; // 8%
+
+        // 5. 석탄 (Type 5) - 매우 흔함 (gy >= 6)
+        if (rand < 0.15) return 5; // 15%
+
+        return 3; // 돌 (기본)
+      }
+    }
+    
+    /**
+     * 특정 글로벌 좌표의 현재 블록 상태(타입, 채굴 여부)를 가져옵니다.
+     */
+    function getBlockState(gx, gy) {
+      const key = `${gx},${gy}`;
+      
+      // 1. 이미 채굴된 블록인지 확인 (가장 높은 우선순위)
+      if (minedBlocks.has(key)) {
+        return { type: 0, isMined: true };
+      }
+      
+      // 2. 다이아몬드 위치 확인 (항상 동일)
+      if (isDiamondFound === false && gx === diamondPosition.x && gy === diamondPosition.y) {
+        return { type: 4, isMined: false, isGoal: true };
+      }
+
+      let type = 0;
+
+      // 3. 캐시 확인 (생성된 블록을 고정)
+      if (blockCache.has(key)) {
+          type = blockCache.get(key);
+      } else {
+          // 4. 캐시에 없으면 월드 생성 로직 실행 (Math.random() 호출)
+          type = generateBlockType(gx, gy);
+          
+          // 5. 공기가 아닌 경우 캐시에 저장하여 고정
+          if (type !== 0) {
+              blockCache.set(key, type);
+          }
+      }
+
+      if (type === 0) {
+        // 공기 블록이거나 월드 생성 로직상 빈 공간이면 채굴된 것으로 간주
+        return { type: 0, isMined: true };
+      }
+      
+      return { type: type, isMined: false };
+    }
+
+    /**
+     * 게임 초기화 및 시작
+     */
+    function initGame() {
+      // 월드 초기화
+      minedBlocks.clear();
+      blockCache.clear(); // NEW: 블록 캐시 초기화
+      isDiamondFound = false;
+      
+      // 다이아몬드 위치 설정 (X: -50 ~ 50, Y: 15~20 사이)
+      diamondPosition.x = Math.floor(Math.random() * 101) - 50; 
+      diamondPosition.y = Math.floor(Math.random() * 6) + 15; // 깊은 곳에 설정
+      
+      // 플레이어 초기 위치 (월드 중앙 상단)
+      playerGlobalX = 0;
+      playerGlobalY = 0; 
+
+      // 초기 지표면까지 자동으로 떨어지게 시작 지점 주변을 비워줍니다.
+      for (let y = 0; y <= 5; y++) {
+        minedBlocks.set(`${playerGlobalX},${y}`, 0);
+      }
+      
+      isGameOver = false;
+      overlay.classList.add('hidden');
+      document.body.focus();
+      
+      renderWorld();
+      
+      // 중력 루프 시작
+      if (gravityInterval) clearInterval(gravityInterval);
+      gravityInterval = setInterval(applyGravity, GRAVITY_SPEED);
+    }
+
+    function restartGame() {
+      initGame();
+    }
+    
+    /**
+     * 현재 플레이어 위치를 기준으로 10x10 월드를 렌더링합니다 (카메라 시점).
+     */
+    function renderWorld() {
+      gameGrid.innerHTML = '';
+      
+      // 카메라 뷰포트의 좌측 상단 글로벌 좌표 계산
+      const viewGlobalX = playerGlobalX - VIEWPORT_CENTER;
+      const viewGlobalY = playerGlobalY - VIEWPORT_CENTER;
+
+      for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+        const viewportY = Math.floor(i / GRID_SIZE);
+        const viewportX = i % GRID_SIZE;
+        
+        const gx = viewGlobalX + viewportX;
+        const gy = viewGlobalY + viewportY;
+        
+        const state = getBlockState(gx, gy);
+        const type = state.type;
+        const isMined = state.isMined;
+        const blockData = BLOCK_TYPES[type] || {};
+
+        const blockElement = document.createElement('div');
+        // 모든 블록 클래스를 추가하여 동적으로 스타일링
+        blockElement.className = `block ${blockData.cssClass || ''} ${isMined ? 'mined' : ''}`;
+        
+        // 블록의 글로벌 좌표를 데이터셋에 저장
+        blockElement.dataset.gx = gx;
+        blockElement.dataset.gy = gy;
+        blockElement.dataset.typeIndex = type;
+        
+        blockElement.addEventListener('click', handleBlockClick);
+        
+        gameGrid.appendChild(blockElement);
+      }
+      
+      // 플레이어의 화면 내 위치를 업데이트합니다 (중앙 고정)
+      const blockPercent = 100 / GRID_SIZE; 
+      playerElement.style.left = `${VIEWPORT_CENTER * blockPercent}%`;
+      playerElement.style.top = `${VIEWPORT_CENTER * blockPercent}%`;
+    }
+
+    /**
+     * 중력 적용 함수 (주기적으로 실행)
+     */
+    function applyGravity() {
+      if (isGameOver) return;
+      
+      const blockBelow = getBlockState(playerGlobalX, playerGlobalY + 1);
+        
+      // 아래 칸이 채굴된 상태(빈 공간)라면 떨어짐
+      if (blockBelow.isMined) {
+        playerGlobalY++;
+        renderWorld(); // 월드 재렌더링
+      }
+    }
+
+    function endGame(isWin) {
+      isGameOver = true;
+      clearInterval(gravityInterval); // 중력 멈춤
+      overlay.classList.remove('hidden');
+      
+      if (isWin) {
+        overlayTitle.textContent = "💎 미션 성공! 💎";
+        overlayDesc.innerHTML = "전설의 다이아몬드를 캤습니다!";
+        overlayTitle.className = "text-3xl font-bold mb-2 text-yellow-400";
+      } else {
+        overlayTitle.textContent = "💀 게임 오버";
+        overlayDesc.textContent = "탐험을 마쳤습니다.";
+        overlayTitle.className = "text-3xl font-bold mb-2 text-red-500";
+      }
+    }
+
+    /**
+     * 블록 시각적 채굴 처리 (DOM과 Map 업데이트)
+     */
+    function mineBlock(blockElement) { 
+      const gx = parseInt(blockElement.dataset.gx);
+      const gy = parseInt(blockElement.dataset.gy);
+      const typeIndex = parseInt(blockElement.dataset.typeIndex);
+      
+      const key = `${gx},${gy}`;
+      
+      // 1. 월드 데이터 업데이트 (채굴 기록)
+      minedBlocks.set(key, typeIndex);
+      // NOTE: 캐시에는 남아있지만, minedBlocks가 우선순위가 높아 다음부터는 공기로 처리됨.
+      
+      // 2. 시각적 업데이트
+      // 모든 블록 클래스를 제거하고 mined 클래스를 추가
+      blockElement.classList.remove('grass', 'dirt', 'stone', 'diamond-ore', 'coal-ore', 'gold-ore', 'iron-ore', 'copper-ore', 'emerald-ore', 'tree-log'); 
+      blockElement.classList.add('mined');
+      blockElement.dataset.typeIndex = 0; // 채굴됨
+    }
+
+    /**
+     * 키보드 조작 (점프 및 이동)
+     */
+    document.addEventListener('keydown', (event) => {
+      if (isGameOver) return;
+      focusMessage.classList.add('hidden');
+
+      let newX = playerGlobalX;
+      let isJump = false;
+
+      switch (event.key) {
+        case 'w': case 'ArrowUp': 
+          isJump = true;
+          break;
+        case 's': case 'ArrowDown': 
+          // 아래 키는 중력으로 처리되므로 이동 방지
+          return;
+        case 'a': case 'ArrowLeft': newX--; break;
+        case 'd': case 'ArrowRight': newX++; break;
+        default: return;
+      }
+
+      // --- 점프 로직 ---
+      if (isJump) {
+        const blockBelow = getBlockState(playerGlobalX, playerGlobalY + 1);
+        
+        // 바닥에 닿아 있거나 (아래가 채굴되지 않은 블록) 월드 경계(아래)가 아니어야 점프 가능
+        if (blockBelow.isMined === false) {
+          const blockAbove = getBlockState(playerGlobalX, playerGlobalY - 1);
+          
+          // 위쪽 공간 확인 (머리 부딪힘 방지)
+          if (blockAbove.isMined === true) {
+            playerGlobalY--; // 점프!
+            renderWorld();
+          }
+        }
+        return;
+      }
+
+      // --- 좌우 이동 로직 (A/D) ---
+      const targetBlock = getBlockState(newX, playerGlobalY); // Y는 현재 위치 유지
+
+      if (targetBlock.isMined === false) {
+        // 벽이 막혀있음 -> 못 감 (시각적 피드백 제공)
+        const playerViewportIndex = VIEWPORT_CENTER * GRID_SIZE + VIEWPORT_CENTER;
+        const playerBlock = gameGrid.children[playerViewportIndex];
+        
+        if (playerBlock) {
+          playerBlock.style.transform = 'scale(0.95)';
+          setTimeout(() => playerBlock.style.transform = 'scale(1)', 100);
+        }
+        return;
+      }
+
+      // 3. 이동 수행
+      playerGlobalX = newX;
+      
+      renderWorld(); // 이동 후 뷰포트 업데이트
+      
+      // 이동 후 즉시 중력을 적용하여 절벽에서 떨어지게 만듭니다.
+      applyGravity(); 
+    });
+
+    /**
+     * 마우스/터치 채굴 로직
+     */
+    function handleBlockClick(event) {
+      if (isGameOver) return;
+      document.body.focus();
+      focusMessage.classList.add('hidden');
+
+      const blockElement = event.target;
+      if (!blockElement.classList.contains('block')) return;
+      
+      const gx = parseInt(blockElement.dataset.gx);
+      const gy = parseInt(blockElement.dataset.gy);
+
+      // 1. 채굴 대상 블록이 이미 채굴되었는지 확인
+      if (getBlockState(gx, gy).isMined) return;
+
+      // 2. 거리 계산 (플레이어 주변 1칸, 대각선 포함)
+      const dx = Math.abs(playerGlobalX - gx);
+      const dy = Math.abs(playerGlobalY - gy);
+      
+      if (dx <= 1 && dy <= 1) {
+        // 다이아몬드?
+        if (gx === diamondPosition.x && gy === diamondPosition.y) {
+          mineBlock(blockElement);
+          isDiamondFound = true;
+          endGame(true);
+          return;
+        }
+
+        // 일반 채굴 (새로운 광물/나무 포함)
+        mineBlock(blockElement);
+        // 채굴 후 즉시 중력을 적용하여 플레이어가 떨어질 수 있게 확인
+        applyGravity(); 
+        
+      } else {
+        // 너무 먼 곳
+        blockElement.style.outline = '2px solid red';
+        setTimeout(() => blockElement.style.outline = 'none', 200);
+      }
+    }
+    
+    // 게임 시작
+    window.onload = initGame;
+  </script>
+</body>
+</html>
